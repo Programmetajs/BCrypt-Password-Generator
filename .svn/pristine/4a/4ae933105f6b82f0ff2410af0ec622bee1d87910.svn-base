@@ -1,0 +1,223 @@
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace BCrypt_Password_Generator
+{
+    delegate void SetTextCallBack(string text, bool isParallelTask, Color ForeColor, Color BackColor);
+    public partial class Form1 : Form
+    {
+        private String Salt;
+        private String HashedPassword;
+        private String StatusText;
+        private String PasswordErrorText;
+        private String WorkFactorErrorText;
+
+        int PasswordLength;
+        
+        public Form1()
+        {
+            InitializeComponent();
+            Salt = "";
+            HashedPassword = "";
+            PasswordLength = 0;
+            StatusText = "";
+
+            Initialize();
+            
+        }
+
+        private void Initialize()
+        {
+            txtplainPassword.Text = "";
+            workFactor.Value = (int)12;
+            txtSalt.Text = "";
+            txthashedPassword.Text = "";
+            txtStatus.Text = "";
+            PasswordErrorText = "";
+            WorkFactorErrorText = "";
+            lblPasswordMatch.Text = "";
+
+            SetStatusLabel_ThreadSafe("", false,default(Color), default(Color));
+        }
+
+        private void btn_generatePassword_Click(object sender, EventArgs e)
+        {
+            StatusText = "";
+            txtStatus.Text = "";
+            String loadingText = "";
+            int WorkFactor = (int)workFactor.Value;
+            PasswordLength = txtplainPassword.TextLength;
+
+            SetLabelColor(Color.Red, Color.Black);
+
+            if (txtplainPassword.TextLength > 0 && (int)workFactor.Value > 0)
+            {
+                loadingText = "BCrypt Password is being Generated, Please wait";
+
+
+                Salt = BCrypt.Net.BCrypt.GenerateSalt(WorkFactor);
+
+                var Task_HashPassword = Task.Run(() => BCrypt.Net.BCrypt.HashPassword(txtplainPassword.Text, Salt));
+                Cursor.Current = Cursors.WaitCursor;
+
+                HashedPassword = Task_HashPassword.Result;
+
+                txtSalt.Text = (string)Salt;
+                txthashedPassword.Text = (string)HashedPassword;
+
+                PasswordErrorText = "";
+                WorkFactorErrorText = "";
+                Task_HashPassword.ContinueWith(t => SetStatusLabel_ThreadSafe("BCrypt Password Successfully Generated", false, Color.Green, Color.White));
+                SetLabelColor(Color.Green, Color.White);
+            }
+            else
+            {
+                txtplainPassword_Leave(sender, e);
+                workFactor_Leave(sender, e);
+            }
+        }
+
+        private void txtplainPassword_Leave(object sender, EventArgs e)
+        {
+            if (txtplainPassword.Text.Length > 0)
+            {
+                PasswordErrorText = "";
+                SetStatusLabel_ThreadSafe(WorkFactorErrorText, false, Color.Red, Color.Black);
+            }
+            else
+            {
+                PasswordErrorText = "Please enter a valid password";
+                SetStatusLabel_ThreadSafe(PasswordErrorText + "\n" + WorkFactorErrorText, false, Color.Red, Color.Black);
+
+            }
+        }
+        private void workFactor_Leave(object sender, EventArgs e)
+        {
+            if ((int)workFactor.Value > 0)
+            {
+                WorkFactorErrorText = "";
+                SetStatusLabel_ThreadSafe(PasswordErrorText, false, Color.Red, Color.Black);
+            }
+            else
+            {
+                WorkFactorErrorText = "Please Enter an appropriate Work Factor";
+                SetStatusLabel_ThreadSafe(WorkFactorErrorText + "\n" + PasswordErrorText, false, Color.Red, Color.Black);
+            }
+        }
+
+        /// <summary>
+        /// sets the Status label of the Generate tab
+        /// </summary>
+        /// <param name="StatusText"></param>
+        private void SetStatusLabel(String StatusText, bool isParallelTask, Color ForeColor, Color BackColor)
+        {
+            if (isParallelTask)
+            {
+                Cursor.Current = Cursors.Default;
+            }
+            else
+            {
+
+                txtStatus.Text = StatusText;
+                txtStatus.Invalidate();
+                txtStatus.Update();
+                txtStatus.Refresh();
+                SetLabelColor();
+            }
+            
+        }
+
+
+       private void SetStatusLabel_ThreadSafe(String StatusText, bool isParallelTask, Color ForeColor, Color BackColor)
+        {
+            if (this.txtStatus.InvokeRequired)
+            {
+                SetTextCallBack d = new SetTextCallBack(SetStatusLabel);
+                this.Invoke(d, new object[] { StatusText, isParallelTask, ForeColor, BackColor });
+            }
+            else
+            {
+                SetStatusLabel(StatusText, isParallelTask, ForeColor, BackColor);
+            }
+        }
+
+        /// <summary>
+        /// sets the color and background properties of the status label
+        /// </summary>
+        private void SetLabelColor()
+        {
+            if (PasswordErrorText == "" && WorkFactorErrorText == "")
+                SetLabelColor(Color.Green, Color.White);
+            else
+                SetLabelColor(Color.Red, Color.Black);
+        }
+        private void SetLabelColor(Color ForeColor, Color BackColor)
+        {
+            txtStatus.ForeColor = ForeColor;
+            txtStatus.BackColor = BackColor;
+        }
+
+        private void SetLabelGreen()
+        {
+            txtStatus.ForeColor = System.Drawing.Color.Green;
+            txtStatus.BackColor = System.Drawing.Color.White;
+        }
+
+        private void SetCheckLabel(String Status, Color ForeColor, Color BackColor)
+        {
+            lblPasswordMatch.Text = Status;
+            lblPasswordMatch.ForeColor = ForeColor;
+            lblPasswordMatch.BackColor = BackColor;
+        }
+
+        private async void btncheckPassword_Click(object sender, EventArgs e)
+        {
+            bool isMatch = false;
+            try
+            {
+                isMatch = await Task.Run(() =>
+                {
+                    try
+                    {
+                        return BCrypt.Net.BCrypt.Verify(
+                      (String)txtPlainPasswordCheck.Text,
+                      (String)txtHashedPasswordCheck.Text);
+
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                }
+           );
+
+                if (isMatch)
+                {
+                    SetCheckLabel("Passwords Match", Color.Black, Color.Green);
+                }
+                else
+                {
+                    SetCheckLabel("Passwords Don't Match", Color.Red, Color.Black);
+                }
+        }
+        catch (BCrypt.Net.SaltParseException e2)
+        {
+            SetCheckLabel(e2.Message.ToString(), Color.Red, Color.Black);
+        }
+
+        SetCursor(Cursors.Default);
+        
+}
+        private void SetCursor(Cursor c)
+        {
+            Cursor.Current = c;
+        }
+    }
+}
